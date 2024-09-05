@@ -1,14 +1,177 @@
-# ReAct
+# **ReAct**
 
-import { Callout, FileTree } from 'nextra-theme-docs'
-import {Screenshot} from 'components/screenshot'
-import REACT from '../../img/react.png'
+![Yao et al., 2022(opens in a new tab)](https://arxiv.org/abs/2210.03629) introduziram uma estrutura chamada ReAct, onde LLMs são usados para gerar tanto *traços de raciocínio* quanto *ações específicas da tarefa* de forma intercalada. Gerar traços de raciocínio permite que o modelo induza, acompanhe e atualize planos de ação, e até mesmo lide com exceções. A etapa de ação permite a interface com fontes externas, como bases de conhecimento ou ambientes, e a coleta de informações delas. A estrutura ReAct pode permitir que LLMs interajam com ferramentas externas para recuperar informações adicionais que levam a respostas mais confiáveis e factuais. Os resultados mostram que o ReAct pode superar várias linhas de base estado da arte em tarefas de linguagem e tomada de decisão. O ReAct também leva a uma melhor interpretabilidade humana e confiabilidade dos LLMs. No geral, os autores descobriram que a melhor abordagem usa ReAct combinado com cadeia de pensamento (CoT), que permite o uso tanto do conhecimento interno quanto das informações externas obtidas durante o raciocínio.
 
-[Yao et al., 2022](https://arxiv.org/abs/2210.03629) introduziu uma estrutura em que LLMs são usados para gerar rastros de raciocínio e ações específicas de tarefas de maneira intercalada. A geração de rastros de raciocínio permite que o modelo induza, rastreie e atualize planos de ação e até mesmo trate de exceções. A etapa de ação permite interagir e coletar informações de fontes externas, como bases de conhecimento ou ambientes.
+**Como funciona?**
 
-A estrutura ReAct pode permitir que os LLMs interajam com ferramentas externas para recuperar informações adicionais que levam a respostas mais confiáveis e factuais.
+O ReAct é inspirado nas sinergias entre "agir" e "raciocinar" que permitem aos humanos aprender novas tarefas e tomar decisões ou raciocinar.
 
-<Screenshot src={REACT} alt="REACT" />
-Fonte da imagem: [Yao et al., 2022](https://arxiv.org/abs/2210.03629)
+O prompt de cadeia de pensamento (CoT) tem mostrado as capacidades dos LLMs de realizar traços de raciocínio para gerar respostas a perguntas envolvendo aritmética e raciocínio de senso comum, entre outras tarefas [(Wei et al., 2022)(opens in a new tab)](https://arxiv.org/abs/2201.11903). Mas sua falta de acesso ao mundo externo ou incapacidade de atualizar seu conhecimento pode levar a problemas como alucinação de fatos e propagação de erros.
 
-Exemplo completo em breve!
+ReAct é um paradigma geral que combina raciocínio e ação com LLMs. ReAct solicita que os LLMs gerem traços de raciocínio verbal e ações para uma tarefa. Isso permite que o sistema realize um raciocínio dinâmico para criar, manter e ajustar planos de ação, além de permitir a interação com ambientes externos (por exemplo, Wikipedia) para incorporar informações adicionais ao raciocínio. A figura abaixo mostra um exemplo de ReAct e as diferentes etapas envolvidas para realizar a resposta a perguntas.
+
+Fonte da imagem: [Yao et al., 2022(opens in a new tab)](https://arxiv.org/abs/2210.03629)
+
+No exemplo acima, passamos um prompt como a seguinte pergunta do [HotpotQA(opens in a new tab)](https://hotpotqa.github.io/):
+
+https://www.promptingguide.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Freact.8e7c93ae.png&w=1920&q=75
+
+```
+Além do Apple Remote, quais outros dispositivos podem controlar o programa com o qual o Apple Remote foi originalmente projetado para interagir?
+```
+
+Note que exemplos de contexto também são adicionados ao prompt, mas os excluímos aqui por simplicidade. Podemos ver que o modelo gera *trajetórias de resolução de tarefas* (Pensamento, Ação). Obs corresponde à observação do ambiente com o qual está interagindo (por exemplo, mecanismo de busca). Em essência, o ReAct pode recuperar informações para apoiar o raciocínio, enquanto o raciocínio ajuda a direcionar o que recuperar a seguir.
+
+## **Prompt ReAct**
+
+Para demonstrar como funciona o prompt ReAct, vamos seguir um exemplo do artigo.
+
+O primeiro passo é selecionar casos de um conjunto de treinamento (por exemplo, HotPotQA) e compor trajetórias no formato ReAct. Estes são usados como exemplares de poucos tiros nos prompts. As trajetórias consistem em múltiplas etapas de pensamento-ação-observação, como mostrado na figura acima. Os pensamentos de forma livre são usados para alcançar diferentes tarefas, como decompor perguntas, extrair informações, realizar raciocínio de senso comum/aritmético, orientar a formulação de busca e sintetizar a resposta final.
+
+Aqui está um exemplo de como são os exemplares de prompt ReAct (obtidos do artigo e reduzidos a um exemplo por simplicidade):
+
+```
+Pergunta Qual é a faixa de elevação para a área em que o setor leste da orogenia do Colorado se estende?
+
+Pensamento 1 Preciso pesquisar sobre a orogenia do Colorado, encontrar a área em que o setor leste da orogenia do Colorado se estende, e então encontrar a faixa de elevação da área.
+
+Ação 1 Pesquisar[orogenia do Colorado]
+
+Observação 1 A orogenia do Colorado foi um episódio de formação de montanhas (uma orogenia) no Colorado e áreas circundantes.
+
+Pensamento 2 Não menciona o setor leste. Então preciso procurar por setor leste.
+
+Ação 2 Procurar[setor leste]
+
+Observação 2 (Resultado 1 / 1) O setor leste se estende até as Grandes Planícies e é chamado de orogenia das Planícies Centrais.
+
+Pensamento 3 O setor leste da orogenia do Colorado se estende até as Grandes Planícies. Então preciso pesquisar Grandes Planícies e encontrar sua faixa de elevação.
+
+Ação 3 Pesquisar[Grandes Planícies]
+
+Observação 3 Grandes Planícies se refere a uma de duas regiões terrestres distintas
+
+Pensamento 4 Preciso pesquisar Grandes Planícies (Estados Unidos).
+
+Ação 4 Pesquisar[Grandes Planícies (Estados Unidos)]
+
+Observação 4 As Grandes Planícies são uma sub-região das Grandes Planícies. De leste a oeste, as Grandes Planícies se elevam em altitude de cerca de 1.800 a 7.000 pés (550 a 2.130 m).[3]
+
+Pensamento 5 As Grandes Planícies se elevam em altitude de cerca de 1.800 a 7.000 pés, então a resposta é 1.800 a 7.000 pés.
+
+Ação 5 Finalizar[1.800 a 7.000 pés]...
+```
+
+Note que diferentes configurações de prompts são usadas para diferentes tipos de tarefas. Para tarefas onde o raciocínio é de importância primária (por exemplo, HotpotQA), múltiplas etapas de pensamento-ação-observação são usadas para a trajetória de resolução da tarefa. Para tarefas de tomada de decisão envolvendo muitas etapas de ação, os pensamentos são usados de forma esparsa.
+
+## **Resultados em Tarefas Intensivas em Conhecimento**
+
+O artigo primeiro avalia o ReAct em tarefas de raciocínio intensivas em conhecimento, como resposta a perguntas (HotPotQA) e verificação de fatos ([Fever(opens in a new tab)](https://fever.ai/resources.html)). O PaLM-540B é usado como modelo base para o prompt.
+
+https://www.promptingguide.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Ftable1.e25bc12b.png&w=1920&q=75
+
+Fonte da imagem: [Yao et al., 2022(opens in a new tab)](https://arxiv.org/abs/2210.03629)
+
+Os resultados de prompt no HotPotQA e Fever usando diferentes métodos de prompt mostram que o ReAct geralmente tem um desempenho melhor do que o Act (envolve apenas ação) em ambas as tarefas.
+
+Também podemos observar que o ReAct supera o CoT no Fever e fica atrás do CoT no HotpotQA. Uma análise detalhada de erros é fornecida no artigo. Em resumo:
+
+- CoT sofre de alucinação de fatos
+- A restrição estrutural do ReAct reduz sua flexibilidade na formulação de etapas de raciocínio
+- ReAct depende muito das informações que está recuperando; resultados de busca não informativos descarrilam o raciocínio do modelo e levam à dificuldade em recuperar e reformular pensamentos
+
+Métodos de prompt que combinam e suportam a alternância entre ReAct e CoT+Auto-Consistência geralmente superam todos os outros métodos de prompt.
+
+## **Resultados em Tarefas de Tomada de Decisão**
+
+O artigo também relata resultados demonstrando o desempenho do ReAct em tarefas de tomada de decisão. O ReAct é avaliado em dois benchmarks chamados [ALFWorld(opens in a new tab)](https://alfworld.github.io/) (jogo baseado em texto) e [WebShop(opens in a new tab)](https://webshop-pnlp.github.io/) (ambiente de site de compras online). Ambos envolvem ambientes complexos que requerem raciocínio para agir e explorar efetivamente.
+
+Note que os prompts ReAct são projetados de forma diferente para essas tarefas, mantendo ainda a mesma ideia central de combinar raciocínio e ação. Abaixo está um exemplo de um problema ALFWorld envolvendo prompt ReAct.
+
+https://www.promptingguide.ai/_next/image?url=%2F_next%2Fstatic%2Fmedia%2Falfworld.da30656d.png&w=1920&q=75
+
+Fonte da imagem: [Yao et al., 2022(opens in a new tab)](https://arxiv.org/abs/2210.03629)
+
+ReAct supera o Act tanto no ALFWorld quanto no Webshop. Act, sem nenhum pensamento, falha em decompor corretamente os objetivos em subobjetivos. O raciocínio parece ser vantajoso no ReAct para esses tipos de tarefas, mas os métodos atuais baseados em prompt ainda estão longe do desempenho de humanos especialistas nessas tarefas.
+
+Confira o artigo para resultados mais detalhados.
+
+## **Uso do ReAct no LangChain**
+
+Abaixo está um exemplo de alto nível de como a abordagem de prompt ReAct funciona na prática. Usaremos OpenAI para o LLM e [LangChain(opens in a new tab)](https://python.langchain.com/en/latest/index.html), pois já possui funcionalidade incorporada que aproveita a estrutura ReAct para construir agentes que realizam tarefas combinando o poder dos LLMs e diferentes ferramentas.
+
+Primeiro, vamos instalar e importar as bibliotecas necessárias:
+
+```
+%%capture
+# atualizar ou instalar as bibliotecas necessárias
+!pip install --upgrade openai
+!pip install --upgrade langchain
+!pip install --upgrade python-dotenv
+!pip install google-search-results 
+
+# importar bibliotecas
+import openai
+import os
+from langchain.llms import OpenAI
+from langchain.agents import load_tools
+from langchain.agents import initialize_agent
+from dotenv import load_dotenv
+
+load_dotenv() # carregar chaves de API; você precisará obtê-las se ainda não as tiver
+os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+os.environ["SERPER_API_KEY"] = os.getenv("SERPER_API_KEY")
+```
+
+Agora podemos configurar o LLM, as ferramentas que usaremos e o agente que nos permite aproveitar a estrutura ReAct junto com o LLM e as ferramentas. Note que estamos usando uma API de pesquisa para buscar informações externas e LLM como uma ferramenta matemática.
+
+```
+llm = OpenAI(model_name="text-davinci-003" ,temperature=0)
+tools = load_tools(["google-serper", "llm-math"], llm=llm)
+agent = initialize_agent(tools, llm, agent="zero-shot-react-description", verbose=True)
+```
+
+Uma vez configurado, podemos agora executar o agente com a consulta/prompt desejado. Observe que aqui não esperamos fornecer exemplares de poucos tiros como explicado no artigo.
+
+```
+agent.run("Quem é o namorado de Olivia Wilde? Qual é a sua idade atual elevada à potência de 0,23?")
+```
+
+A execução da cadeia se parece com o seguinte:
+
+```
+> Entrando em nova cadeia AgentExecutor...
+Preciso descobrir quem é o namorado de Olivia Wilde e depois calcular sua idade elevada à potência de 0,23.
+
+Ação: Pesquisar
+Entrada da Ação: "namorado de Olivia Wilde"
+Observação: Olivia Wilde começou a namorar Harry Styles depois de terminar seu noivado de anos com Jason Sudeikis — veja a linha do tempo do relacionamento deles.
+
+Pensamento: Preciso descobrir a idade de Harry Styles.
+
+Ação: Pesquisar
+Entrada da Ação: "idade de Harry Styles"
+Observação: 29 anos
+
+Pensamento: Preciso calcular 29 elevado à potência de 0,23.
+
+Ação: Calculadora
+Entrada da Ação: 29^0,23
+Observação: Resposta: 2,169459462491557 
+
+Pensamento: Agora sei a resposta final.
+
+Resposta Final: Harry Styles, o namorado de Olivia Wilde, tem 29 anos e sua idade elevada à potência de 0,23 é 2,169459462491557. 
+
+> Cadeia finalizada.
+```
+
+A saída que obtemos é a seguinte:
+
+```
+"Harry Styles, o namorado de Olivia Wilde, tem 29 anos e sua idade elevada à potência de 0,23 é 2,169459462491557."
+```
+
+Adaptamos o exemplo da [Documentação LangChain](https://python.langchain.com/v0.1/docs/modules/agents/agent_types/react/), então os créditos são a eles. Nós encorajamos o aluno a explorar diferentes combinações de ferramentas e tarefas.
+
+Você pode encontrar o notebook para este código aqui: https://github.com/dair-ai/Prompt-Engineering-Guide/blob/main/notebooks/react.ipynb
